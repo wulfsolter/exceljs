@@ -1,13 +1,14 @@
 'use strict';
 
+var fs = require('fs');
 var expect = require('chai').expect;
 var bluebird = require('bluebird');
-var fs = require('fs');
-var fsa = bluebird.promisifyAll(fs);
 var _ = require('underscore');
 var Excel = require('../../excel');
-var testUtils = require('./../testutils');
+var testUtils = require('./../utils/index');
 var utils = require('../../lib/utils/utils');
+
+var TEST_FILE_NAME = './spec/out/wb.test.xlsx';
 
 describe('WorkbookWriter', function() {
 
@@ -21,50 +22,43 @@ describe('WorkbookWriter', function() {
   });
 
   describe('Serialise', function() {
-    after(function() {
-      // delete the working file, don't care about errors
-      return fsa.unlinkAsync('./wbw.test.xlsx').catch(function(){});
-    });
-
     it('xlsx file', function() {
       var options = {
-        filename: './wbw.test.xlsx',
+        filename: TEST_FILE_NAME,
         useStyles: true
       };
-      var wb = testUtils.createTestBook(true, Excel.stream.xlsx.WorkbookWriter, options);
-      //fs.writeFileSync('./testmodel.json', JSON.stringify(wb.model, null, '    '));
+      var wb = testUtils.createTestBook(new Excel.stream.xlsx.WorkbookWriter(options), 'xlsx');
 
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
-          testUtils.checkTestBook(wb2, 'xlsx', true);
+          testUtils.checkTestBook(wb2, 'xlsx');
         });
     });
 
     it('Without styles', function() {
       var options = {
-        filename: './wbw.test.xlsx',
+        filename: TEST_FILE_NAME,
         useStyles: false
       };
-      var wb = testUtils.createTestBook(true, Excel.stream.xlsx.WorkbookWriter, options);
-      //fs.writeFileSync('./testmodel.json', JSON.stringify(wb.model, null, '    '));
+      var wb = testUtils.createTestBook(new Excel.stream.xlsx.WorkbookWriter(options), 'xlsx');
 
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
-          testUtils.checkTestBook(wb2, 'xlsx', false);
+          testUtils.checkTestBook(wb2, 'xlsx', undefined, {checkStyles: false});
         });
     });
 
     it('serializes row styles and columns properly', function() {
       var options = {
-        filename: './wbw.test.xlsx',
+        filename: TEST_FILE_NAME,
         useStyles: true
       };
       var wb = new Excel.stream.xlsx.WorkbookWriter(options);
@@ -77,7 +71,7 @@ describe('WorkbookWriter', function() {
       ws.columns = [
         { header: 'A1', width: 10 },
         { header: 'B1', width: 20, style: colStyle },
-        { header: 'C1', width: 30 },
+        { header: 'C1', width: 30 }
       ];
 
       ws.getRow(2).font = testUtils.styles.fonts.broadwayRedOutline20;
@@ -92,7 +86,7 @@ describe('WorkbookWriter', function() {
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
           var ws2 = wb2.getWorksheet('blort');
@@ -118,7 +112,7 @@ describe('WorkbookWriter', function() {
       this.timeout(5000);
 
       var i;
-      var wb = new Excel.stream.xlsx.WorkbookWriter({filename: './wbw.test.xlsx'});
+      var wb = new Excel.stream.xlsx.WorkbookWriter({filename: TEST_FILE_NAME});
       var numSheets = 90;
       // add numSheets sheets
       for (i = 1; i <= numSheets; i++) {
@@ -128,7 +122,7 @@ describe('WorkbookWriter', function() {
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
           for (i = 1; i <= numSheets; i++) {
@@ -139,8 +133,22 @@ describe('WorkbookWriter', function() {
         });
     });
 
+    it('addRow', function() {
+      var options = {
+        stream: fs.createWriteStream(TEST_FILE_NAME, {flags: 'w'}),
+        useStyles: true,
+        useSharedStrings: true
+      };
+      var workbook = new Excel.stream.xlsx.WorkbookWriter(options);
+      var worksheet = workbook.addWorksheet('test');
+      var newRow = worksheet.addRow(['hello']);
+      newRow.commit();
+      worksheet.commit();
+      return workbook.commit();
+    });
+
     it('defined names', function() {
-      var wb = new Excel.stream.xlsx.WorkbookWriter({filename: './wbw.test.xlsx'});
+      var wb = new Excel.stream.xlsx.WorkbookWriter({filename: TEST_FILE_NAME});
       var ws = wb.addWorksheet('blort');
       ws.getCell('A1').value = 5;
       ws.getCell('A1').name = 'five';
@@ -162,7 +170,7 @@ describe('WorkbookWriter', function() {
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
           var ws2 = wb2.getWorksheet('blort');
@@ -179,19 +187,17 @@ describe('WorkbookWriter', function() {
     });
 
     it('serializes and deserializes dataValidations', function() {
-      var wb = new Excel.stream.xlsx.WorkbookWriter({filename: './wbw.test.xlsx'});
-      testUtils.addDataValidationSheet(wb);
+      var options = {filename: TEST_FILE_NAME};
+      var wb = testUtils.createTestBook(new Excel.stream.xlsx.WorkbookWriter(options),'xlsx', ['dataValidations']);
 
       return wb.commit()
         .then(function() {
           var wb2 = new Excel.Workbook();
-          return wb2.xlsx.readFile('./wbw.test.xlsx');
+          return wb2.xlsx.readFile(TEST_FILE_NAME);
         })
         .then(function(wb2) {
-          testUtils.checkDataValidationSheet(wb2);
+          testUtils.checkTestBook(wb2, 'xlsx', ['dataValidations']);
         });
     });
-
-
   });
 });
